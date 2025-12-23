@@ -21,12 +21,12 @@ export function AuthModel({ isOpen, onClose }) {
   const handleGoogleLogin = async() => {
     toast.loading("Signing you in…");
     const {origin} = window.location;
-    await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: `${origin}/auth/callback`,
-      },
-  } ) 
+   await supabase.auth.signInWithOAuth({
+  provider: "google",
+  options: {
+    redirectTo: "https://price-down-app.vercel.app/auth/callback",
+  },
+});
       
   }
 
