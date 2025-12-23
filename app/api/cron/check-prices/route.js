@@ -71,7 +71,7 @@ export async function POST() {
                     if(newPrice < oldPrice) {
                          const {data: {user} , } = await supabase.auth.admin.getUserById(product.user_id);
                          if(user?.email) {
-                            const emailResult = await sendpriceDropAlert(
+                            const emailResult = await sendPriceDropAlert(
                                 user.email,
                                 product,
                                 oldPrice,
