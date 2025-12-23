@@ -1,4 +1,4 @@
-import { sendpriceDropAlert } from "@/lib/Email";
+import { sendPriceDropAlert } from "@/lib/Email";
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 
