@@ -17,10 +17,15 @@ export function AuthModel({ isOpen, onClose }) {
   const handleGoogleLogin = async () => {
     toast.loading("Signing you in…");
 
+    // ✅ SAFE browser-only execution
+    if (typeof window === "undefined") return;
+
+    const origin = window.location.origin;
+
     await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: "https://price-down-app.vercel.app/auth/callback",
+        redirectTo: `${origin}/auth/callback`,
       },
     });
   };
