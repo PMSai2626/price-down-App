@@ -28,7 +28,7 @@ export async function POST() {
         .from('products')
         .select("*");
 
-        if(productsError) throw productError;
+        if(productsError) throw productsError;
 
         console.log(`Found ${products.length} products to check`);
 
