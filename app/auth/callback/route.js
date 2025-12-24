@@ -17,5 +17,10 @@ export async function GET(request) {
     maxAge: 10,       // seconds
     httpOnly: false, // 👈 THIS FIXES LOGIN TOAST
   });
+  
+  // Prevent back/forward cache to avoid Chrome extension port disconnection
+  response.headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
+  response.headers.set("Pragma", "no-cache");
+  
   return response;
 }

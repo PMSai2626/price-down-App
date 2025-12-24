@@ -21,13 +21,19 @@ export function AuthModel({ isOpen, onClose }) {
   const handleGoogleLogin = async() => {
     toast.loading("Signing you in…");
     const {origin} = window.location;
+    
+    // Prevent back/forward cache issues
+    if (window.performance) {
+      window.addEventListener('beforeunload', () => {});
+    }
+    
     await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
         redirectTo: `${origin}/auth/callback`,
+        skipBrowserRedirect: false,
       },
-  } ) 
-      
+    });
   }
 
   return (
