@@ -1,6 +1,5 @@
 "use client";
 
-
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -13,37 +12,36 @@ import { createClient } from "@/utils/supabase/client";
 import { toast } from "sonner";
 
 export function AuthModel({ isOpen, onClose }) {
-    const supabase = createClient();
+  const supabase = createClient();
 
-  const handleGoogleLogin = async() => {
+  const handleGoogleLogin = async () => {
     toast.loading("Signing you in…");
-    const {origin} = window.location;
-    
-    // Prevent back/forward cache issues
-    if (window.performance) {
-      window.addEventListener('beforeunload', () => {});
-    }
-    
+
     await supabase.auth.signInWithOAuth({
-      provider: 'google',
+      provider: "google",
       options: {
-        redirectTo: `${origin}/auth/callback`,
-        skipBrowserRedirect: false,
+        redirectTo: "https://price-down-app.vercel.app/auth/callback",
       },
     });
-  }
+  };
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
-          <DialogTitle>Edit profile</DialogTitle>
+          <DialogTitle>Sign in</DialogTitle>
           <DialogDescription>
-            Make changes to your profile here. Click save when you&apos;re done.
+            Continue with Google to track price drops
           </DialogDescription>
         </DialogHeader>
+
         <div className="flex flex-col gap-4 py-4">
-          <Button onClick={handleGoogleLogin} variant="outline" className="w-full gap-2" size="lg">
+          <Button
+            onClick={handleGoogleLogin}
+            variant="outline"
+            className="w-full gap-2"
+            size="lg"
+          >
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
               <path
                 fill="#EA4335"
