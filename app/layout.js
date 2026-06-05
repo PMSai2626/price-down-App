@@ -1,9 +1,8 @@
-import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "sonner";
-import AuthListener from "@/components/AuthListener";
 import LoginToast from "@/components/LoginToast";
-
+import { AuthProvider } from "@/components/AuthProvider";
+import { ThemeProvider } from "@/components/ThemeProvider";
 
 export const metadata = {
   title: "Price Drop App",
@@ -12,14 +11,15 @@ export const metadata = {
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body>
-        <Toaster richColors position="top-right" />
-        <LoginToast />
-        <AuthListener />
-        {children}  
-        
-        
+        <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+          <AuthProvider>
+            <Toaster richColors position="top-right" />
+            <LoginToast />
+            {children}
+          </AuthProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

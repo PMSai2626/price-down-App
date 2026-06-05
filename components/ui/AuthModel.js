@@ -8,26 +8,22 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { createClient } from "@/utils/supabase/client";
+import { googleLogin } from "@/lib/auth";
 import { toast } from "sonner";
 
 export function AuthModel({ isOpen, onClose }) {
-  const supabase = createClient();
-
   const handleGoogleLogin = async () => {
-    toast.loading("Signing you in…");
+    try {
+      const user = await googleLogin();
 
-    // ✅ SAFE browser-only execution
-    if (typeof window === "undefined") return;
-
-    const origin = window.location.origin;
-
-    await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: `${origin}/auth/callback`,
-      },
-    });
+      if (user) {
+        toast.success(`Welcome ${user.displayName}`);
+        onClose();
+      }
+    } catch (error) {
+      toast.error("Login failed");
+      console.log(error);
+    }
   };
 
   return (
@@ -65,6 +61,7 @@ export function AuthModel({ isOpen, onClose }) {
                 d="M24 47c5.4 0 10-1.8 13.4-4.9l-6.5-5c-1.8 1.2-4.1 2-6.9 2-6.6 0-12.4-4.1-14.2-9.9l-7 5.3C6.6 41.6 14.6 47 24 47z"
               />
             </svg>
+
             Continue with Google
           </Button>
         </div>

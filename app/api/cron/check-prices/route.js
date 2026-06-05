@@ -1,113 +1,111 @@
-import { sendPriceDropAlert } from "@/lib/Email";
-import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
+import { db } from "@/lib/firebase";
+import { scrapeProduct } from "@/lib/firecrawl";
+import { sendPriceDropAlert } from "@/lib/Email";
+import {
+  collection,
+  getDocs,
+  doc,
+  updateDoc,
+  addDoc,
+  Timestamp,
+} from "firebase/firestore";
 
+export async function GET(request) {
+  // ── Auth: require CRON_SECRET header ──────────────────────────────────────
+  const secret = request.headers.get("x-cron-secret");
+  if (secret !== process.env.CRON_SECRET) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
 
-export async function GET() {
-    return NextResponse.json({
-        message: "Price check end point is working. Use POST to trigger."
-    })
-}
+  const results = [];
 
-export async function POST() {
-    try {
-        
-        const authHeader = request.headers.get("authorization");
-        const cronSecret = process.env.CRON_SECRET;
+  try {
+    // 1. Load all tracked products
+    const snapshot = await getDocs(collection(db, "products"));
+    const products = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
 
-        if(!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
-            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    for (const product of products) {
+      try {
+        // 2. Re-scrape the product page
+        const scraped = await scrapeProduct(product.url);
+        const newPrice = Number(scraped.currentPrice);
+        const oldPrice = Number(product.currentPrice);
+
+        // 3. Record price history regardless
+        await addDoc(collection(db, "priceHistory"), {
+          productId: product.id,
+          price: newPrice,
+          checkedAt: Timestamp.now(),
+        });
+
+        // 4. Price dropped → update doc + send email
+        if (newPrice < oldPrice && product.userEmail) {
+          await updateDoc(doc(db, "products", product.id), {
+            currentPrice: newPrice,
+          });
+
+          const emailResult = await sendPriceDropAlert(
+            product.userEmail,
+            {
+              name: product.name,
+              url: product.url,
+              currency:
+                product.currency === "INR"
+                  ? "₹"
+                  : product.currency === "USD"
+                  ? "$"
+                  : product.currency || "₹",
+            },
+            oldPrice,
+            newPrice
+          );
+
+          results.push({
+            productId: product.id,
+            name: product.name,
+            oldPrice,
+            newPrice,
+            priceDrop: true,
+            emailSent: !emailResult.error,
+          });
+        } else {
+          // Price unchanged or went up — still update stored price
+          if (newPrice !== oldPrice) {
+            await updateDoc(doc(db, "products", product.id), {
+              currentPrice: newPrice,
+            });
+          }
+
+          results.push({
+            productId: product.id,
+            name: product.name,
+            oldPrice,
+            newPrice,
+            priceDrop: false,
+            emailSent: false,
+          });
         }
-
-        const supabase = createClient(
-            process.env.NEXT_PUBLIC_SUPABASE_URL,
-            process.env.SUPABASE_SERVICE_ROLE_KEY
-        );
-
-        const {data: products, error: productsError } = await supabase
-        .from('products')
-        .select("*");
-
-        if(productsError) throw productsError;
-
-        console.log(`Found ${products.length} products to check`);
-
-        const results = {
-            total: products.length,
-            updated: 0,
-            failed: 0,
-            priceChanges: 0,
-            alertsSent: 0,
-        };
-
-        for (const product of products) {
-            try {
-                const productData = await scrapeProduct(product.url);
-                if (!productData.currentPrice) {
-                    results.failed++;
-                    continue;
-                }
-
-                const newPrice = parseFloat(productData.currentPrice);
-                const oldPrice = parseFloat(product.current_price);
-
-                await supabase.from("products").update({
-                    current_price: newPrice,
-                    currency: productData.currencyCode || product.currency,
-                    name: productData.productname || product.name,
-                    image_url: productData.productImageUrl || product.image_url,
-                    updated_at: new Date().toISOString(),
-                }).eq("id", product.id);
-
-                if(oldPrice !== newPrice) {
-                    await supabase.from("price_history").insert({
-                        product_id: product.id,
-                        price: newPrice,
-                        currency: productData.currencyCode || product.currency,
-
-                    })
-                    results.priceChanges++;
-
-                    if(newPrice < oldPrice) {
-                         const {data: {user} , } = await supabase.auth.admin.getUserById(product.user_id);
-                         if(user?.email) {
-                            const emailResult = await sendPriceDropAlert(
-                                user.email,
-                                product,
-                                oldPrice,
-                                newPrice
-                            );
-
-                            if(emailResult.success) {
-                                results.alertsSent++;
-                            }
-
-                         }
-                    }
-                }
-
-                results.updated++;
-
-            } catch (error) {
-                console.error(`Error processing product ${product.id}: `, error);
-                results.failed++;
-            }
-        }
-
-        return NextResponse.json({
-            success: true,
-            message: "Price check completed",
-            results, 
-        })
-
-
-        
-
-
-    } catch (error) {
-        console.error("Cron job error:", error);
-        return NextResponse.json({ error: error.message }, { status: 500});
-        }
-        
+      } catch (err) {
+        console.error(`Failed to check product ${product.id}:`, err.message);
+        results.push({
+          productId: product.id,
+          name: product.name,
+          error: err.message,
+        });
+      }
     }
 
+    return NextResponse.json({
+      success: true,
+      checked: products.length,
+      results,
+    });
+  } catch (error) {
+    console.error("Cron job error:", error);
+    return NextResponse.json(
+      { success: false, error: error.message },
+      { status: 500 }
+    );
+  }
+}

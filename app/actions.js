@@ -1,151 +1,173 @@
 "use server";
 
 import { scrapeProduct } from "@/lib/firecrawl";
-import { createClient } from "@/utils/supabase/server";
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
+import { db } from "@/lib/firebase";
 
-export async function signOut() {
-  const supabase = await createClient();
-
-  // 🔐 GLOBAL sign out clears refresh + access tokens
-  await supabase.auth.signOut({ scope: "global" });
-
-  revalidatePath("/");
-  redirect("/");
-}
-
+import {
+  collection,
+  addDoc,
+  getDocs,
+  deleteDoc,
+  doc,
+  query,
+  where,
+  getDoc,
+  updateDoc,
+} from "firebase/firestore";
 
 export async function addProduct(formData) {
-  const url = formData.get("url");
-
-  if (!url) {
-    return { error: "URL is required" };
-  }
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) {
+    const url = formData.get("url");
+    const userId = formData.get("userId");
+    const userEmail = formData.get("userEmail");
+
+    if (!userId) {
       return { error: "AUTH_REQUIRED" };
+    }
+
+    if (!url) {
+      return { error: "URL is required" };
     }
 
     const productData = await scrapeProduct(url);
 
-    if (!productData.productName || !productData.currentPrice) {
-      console.log(productData, "productData");
-      return { error: "Could not extract product information from this URL" };
+    if (!productData?.productName) {
+      return {
+        error: "Could not extract product information from this URL",
+      };
     }
 
-    // const newPrice = parseFloat(productData.currentPrice);
-    const newPrice = Number(productData.currentPrice);
+    const currentPrice = Number(productData.currentPrice);
 
-    if (!Number.isFinite(newPrice)) {
-      return { error: "Could not extract a valid price from this product URL" };
-    }
-
-    const currency = productData.currencyCode || "USD";
-
-    const { data: existingProduct } = await supabase
-      .from("products")
-      .select("id, current_price")
-      .eq("user_id", user.id)
-      .eq("url", url)
-      .maybeSingle();
-
-    const isUpdate = !!existingProduct;
-
-    const { data: product, error } = await supabase
-  .from("products")
-  .upsert(
-    {
-      user_id: user.id,
-      url,
+    const product = {
       name: productData.productName,
-      current_price: newPrice, 
-      image_url: productData.productImageUrl || "", 
-    },
-    {
-      onConflict: "user_id,url",
-    }
-  )
-  .select()
-  .single();
+      currentPrice,
+      imageUrl: productData.productImageUrl || "",
+      currency: productData.currencyCode || "INR",
+      url,
+      userId,
+      userEmail: userEmail || "",
+      createdAt: new Date(),
+    };
 
+    const docRef = await addDoc(collection(db, "products"), product);
 
-    if (error) throw error;
-
-    const shouldAddHistory =
-      !isUpdate || existingProduct?.current_price !== newPrice;
-    if (shouldAddHistory) {
-      await supabase.from("price_history").insert({
-        product_id: product.id,
-        price: newPrice,
-        currency: currency,
-      });
-    }
+    await addDoc(collection(db, "priceHistory"), {
+      productId: docRef.id,
+      price: currentPrice,
+      checkedAt: new Date(),
+    });
 
     revalidatePath("/");
 
     return {
       success: true,
-      product,
-      message: isUpdate
-        ? "product updated with latest price"
-        : "product added successfully!",
+      product: {
+        id: docRef.id,
+        ...product,
+      },
+      message: "Product tracked successfully!",
     };
   } catch (error) {
-    console.log("Add product error:", error);
-    return { error: error.message || "Failed to add product" };
+    console.error("Add product error:", error);
+    return {
+      error: error.message || "Failed to add product",
+    };
   }
 }
 
-export async function deleteProduct(productId) {
+export async function getProducts(userId) {
   try {
-    const supabase = await createClient();
-    const { error } = await supabase
-      .from("products")
-      .delete()
-      .eq("id", productId);
-    if (error) throw error;
+    if (!userId) return [];
 
-    revalidatePath("/");
-    return { success: true };
-  } catch (error) {
-    return { error: error.message };
-  }
-}
+    // Use only the where clause — avoids needing a composite Firestore index.
+    // We sort client-side instead.
+    const q = query(
+      collection(db, "products"),
+      where("userId", "==", userId)
+    );
 
-export async function getProducts() {
-  try {
-    const supabase = await createClient();
-    const { data, error } = await supabase
-      .from("products")
-      .select("*")
-      .order("created_at", { ascending: false });
+    const snapshot = await getDocs(q);
 
-    if (error) throw error;
-    return data || [];
+    const docs = snapshot.docs.map((item) => ({
+      id: item.id,
+      ...item.data(),
+      // Convert Firestore Timestamps to plain ISO strings so they are
+      // serialisable when passed from Server → Client components.
+      createdAt: item.data().createdAt?.toDate?.()?.toISOString?.() ?? null,
+    }));
+
+    // Sort newest-first in JS
+    docs.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    return docs;
   } catch (error) {
     console.error("Get products error:", error);
     return [];
   }
 }
 
+export async function deleteProduct(productId, userId) {
+  try {
+    const ref = doc(db, "products", productId);
+    const snap = await getDoc(ref);
+
+    if (!snap.exists()) {
+      return { error: "Product not found" };
+    }
+
+    const productUserId = snap.data().userId;
+    // Allow deleting if product has no owner (legacy doc) or if the current user is the owner
+    if (productUserId && productUserId !== userId) {
+      return { error: "Unauthorized" };
+    }
+
+    await deleteDoc(ref);
+
+    // Also delete associated priceHistory docs
+    try {
+      const q = query(
+        collection(db, "priceHistory"),
+        where("productId", "==", productId)
+      );
+      const historySnap = await getDocs(q);
+      const deletePromises = historySnap.docs.map((d) => deleteDoc(d.ref));
+      await Promise.all(deletePromises);
+    } catch (historyErr) {
+      console.error("Failed to delete price history for product:", productId, historyErr);
+    }
+
+    revalidatePath("/");
+
+    return {
+      success: true,
+      message: "Product deleted successfully",
+    };
+  } catch (error) {
+    console.error("Delete product action error:", error);
+    return {
+      error: error.message,
+    };
+  }
+}
+
 export async function getPriceHistory(productId) {
   try {
-    const supabase = await createClient();
-    const { data, error } = await supabase
-      .from("price_history")
-      .select("*")
-      .eq("product_id", productId)
-      .order("checked_at", { ascending: true });
+    const snapshot = await getDocs(collection(db, "priceHistory"));
 
-    if (error) throw error;
-    return data || [];
+    return snapshot.docs
+      .map((item) => ({
+        id: item.id,
+        ...item.data(),
+        checkedAt:
+          item.data().checkedAt?.toDate?.()?.toISOString?.() ??
+          item.data().checkedAt,
+      }))
+      .filter((item) => item.productId === productId)
+      .sort((a, b) => new Date(a.checkedAt) - new Date(b.checkedAt));
   } catch (error) {
-    console.log("Get price history error:", error);
+    console.error("Get price history error:", error);
     return [];
   }
 }

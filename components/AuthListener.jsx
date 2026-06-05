@@ -1,27 +1,19 @@
 "use client";
 
 import { useEffect } from "react";
-import { createClient } from "@/utils/supabase/client";
+import { onAuthStateChanged } from "firebase/auth";
+import { auth } from "@/lib/firebase";
 import { toast } from "sonner";
 
 export default function AuthListener() {
-  const supabase = createClient();
-
   useEffect(() => {
-    const { data: { subscription } } =
-      supabase.auth.onAuthStateChange((event) => {
-        if (event === "SIGNED_OUT") {
-            setTimeout(() => {
-                window.location.reload();
-                toast.success("Logged out successfully 👋");
-            
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        toast.success(`Welcome ${user.displayName}`);
+      }
+    });
 
-            }, 200)
-          
-        }
-      });
-
-    return () => subscription.unsubscribe();
+    return () => unsubscribe();
   }, []);
 
   return null;
