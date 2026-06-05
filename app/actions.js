@@ -18,6 +18,9 @@ import {
 
 export async function addProduct(formData) {
   try {
+    if (!db) {
+      return { error: "Database not initialized. Please configure your environment variables in Vercel settings." };
+    }
     const url = formData.get("url");
     const userId = formData.get("userId");
     const userEmail = formData.get("userEmail");
@@ -79,6 +82,10 @@ export async function addProduct(formData) {
 
 export async function getProducts(userId) {
   try {
+    if (!db) {
+      console.warn("getProducts check: database not initialized.");
+      return [];
+    }
     if (!userId) return [];
 
     // Use only the where clause — avoids needing a composite Firestore index.
@@ -110,6 +117,9 @@ export async function getProducts(userId) {
 
 export async function deleteProduct(productId, userId) {
   try {
+    if (!db) {
+      return { error: "Database not initialized. Please configure your environment variables in Vercel settings." };
+    }
     const ref = doc(db, "products", productId);
     const snap = await getDoc(ref);
 
@@ -160,6 +170,10 @@ export async function deleteProduct(productId, userId) {
 
 export async function getPriceHistory(productId) {
   try {
+    if (!db) {
+      console.warn("getPriceHistory check: database not initialized.");
+      return [];
+    }
     const snapshot = await getDocs(collection(db, "priceHistory"));
 
     return snapshot.docs
