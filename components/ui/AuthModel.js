@@ -21,7 +21,7 @@ export function AuthModel({ isOpen, onClose }) {
         onClose();
       }
     } catch (error) {
-      toast.error("Login failed");
+      toast.error(error.message || "Login failed");
       console.log(error);
     }
   };
