@@ -114,16 +114,21 @@ export async function deleteProduct(productId, userId) {
     const snap = await getDoc(ref);
 
     if (!snap.exists()) {
+      console.log(`deleteProduct info: Document ${productId} not found`);
       return { error: "Product not found" };
     }
 
     const productUserId = snap.data().userId;
+    console.log(`deleteProduct check: productUserId = [${productUserId}], passed userId = [${userId}]`);
+
     // Allow deleting if product has no owner (legacy doc) or if the current user is the owner
     if (productUserId && productUserId !== userId) {
+      console.log("deleteProduct info: Unauthorized delete attempt");
       return { error: "Unauthorized" };
     }
 
     await deleteDoc(ref);
+    console.log(`deleteProduct success: Deleted document ${productId}`);
 
     // Also delete associated priceHistory docs
     try {
@@ -134,6 +139,7 @@ export async function deleteProduct(productId, userId) {
       const historySnap = await getDocs(q);
       const deletePromises = historySnap.docs.map((d) => deleteDoc(d.ref));
       await Promise.all(deletePromises);
+      console.log(`deleteProduct success: Cleaned up ${deletePromises.length} priceHistory entries`);
     } catch (historyErr) {
       console.error("Failed to delete price history for product:", productId, historyErr);
     }

@@ -34,18 +34,26 @@ const ProductCard = ({ product, userId, onDeleted }) => {
   const [imgError, setImgError] = useState(false);
 
   const handleDelete = async () => {
+    console.log(`handleDelete call: product.id = [${product.id}], userId = [${userId}]`);
     if (!confirm("Remove this product from tracking?")) return;
 
     setDeleting(true);
 
-    const result = await deleteProduct(product.id, userId);
+    try {
+      const result = await deleteProduct(product.id, userId);
+      console.log("handleDelete result:", result);
 
-    if (result?.error) {
-      toast.error(result.error);
+      if (result?.error) {
+        toast.error(result.error);
+        setDeleting(false);
+      } else {
+        toast.success("Product removed from tracking");
+        if (onDeleted) onDeleted(product.id);
+      }
+    } catch (error) {
+      console.error("handleDelete catch error:", error);
+      toast.error("Failed to delete product: " + error.message);
       setDeleting(false);
-    } else {
-      toast.success("Product removed from tracking");
-      if (onDeleted) onDeleted(product.id);
     }
   };
 
